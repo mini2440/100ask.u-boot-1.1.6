@@ -125,7 +125,7 @@ ifeq ($(ARCH),ppc)
 CROSS_COMPILE = powerpc-linux-
 endif
 ifeq ($(ARCH),arm)
-CROSS_COMPILE = arm-linux-
+CROSS_COMPILE = /home/user/mini2440/gcc-3.4.5-glibc-2.3.6/bin/arm-linux-
 endif
 ifeq ($(ARCH),i386)
 ifeq ($(HOSTARCH),i386)
