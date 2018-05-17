@@ -90,6 +90,18 @@ _bss_start:
 _bss_end:
 	.word _end
 
+.globl FREE_RAM_END
+FREE_RAM_END:
+	.word	0x0badc0de
+
+.globl FREE_RAM_SIZE
+FREE_RAM_SIZE:
+	.word	0x0badc0de
+
+.globl PreLoadedONRAM
+PreLoadedONRAM:
+	.word	0
+
 #ifdef CONFIG_USE_IRQ
 /* IRQ stack memory (calculated at run-time) */
 .globl IRQ_STACK_START
@@ -123,6 +135,7 @@ reset:
 # define CLKDIVN	0x14800014	/* clock divisor register */
 #elif defined(CONFIG_S3C2410)
 # define pWTCON		0x53000000
+# define INTMOD     0X4A000004
 # define INTMSK		0x4A000008	/* Interupt-Controller base addresses */
 # define INTSUBMSK	0x4A00001C
 # define CLKDIVN	0x4C000014	/* clock divisor register */
@@ -145,11 +158,13 @@ reset:
 	str	r1, [r0]
 # endif
 
+#if 0
 	/* FCLK:HCLK:PCLK = 1:2:4 */
 	/* default FCLK is 120 MHz ! */
 	ldr	r0, =CLKDIVN
 	mov	r1, #3
 	str	r1, [r0]
+#endif
 #endif	/* CONFIG_S3C2400 || CONFIG_S3C2410 */
 
 	/*
@@ -157,19 +172,40 @@ reset:
 	 * not when booting from ram!
 	 */
 #ifndef CONFIG_SKIP_LOWLEVEL_INIT
-	bl	cpu_init_crit
+	adr	r0, _start		/* r0 <- current position of code   */
+	ldr	r1, _TEXT_BASE		/* test if we run from flash or RAM */
+	cmp     r0, r1                  /* don't reloc during debug         */
+	blne	cpu_init_crit
 #endif
+
+	/* Set up the stack						    */
+stack_setup:
+	ldr	r0, _TEXT_BASE		/* upper 128 KiB: relocated uboot   */
+	sub	r0, r0, #CFG_MALLOC_LEN	/* malloc area                      */
+	sub	r0, r0, #CFG_GBL_DATA_SIZE /* bdinfo                        */
+
+#ifdef CONFIG_USE_IRQ
+	sub	r0, r0, #(CONFIG_STACKSIZE_IRQ+CONFIG_STACKSIZE_FIQ)
+#endif
+	sub	sp, r0, #12		/* leave 3 words for abort-stack    */
+
+#ifndef CONFIG_SKIP_LOWLEVEL_INIT
+    bl clock_init
+#endif    
 
 #ifndef CONFIG_SKIP_RELOCATE_UBOOT
 relocate:				/* relocate U-Boot to RAM	    */
 	adr	r0, _start		/* r0 <- current position of code   */
 	ldr	r1, _TEXT_BASE		/* test if we run from flash or RAM */
 	cmp     r0, r1                  /* don't reloc during debug         */
-	beq     stack_setup
-
+	beq     clear_bss
+	
 	ldr	r2, _armboot_start
 	ldr	r3, _bss_start
 	sub	r2, r3, r2		/* r2 <- size of armboot            */
+#if 1
+	bl  CopyCode2Ram	/* r0: source, r1: dest, r2: size */
+#else
 	add	r2, r0, r2		/* r2 <- source end address         */
 
 copy_loop:
@@ -177,17 +213,8 @@ copy_loop:
 	stmia	r1!, {r3-r10}		/* copy to   target address [r1]    */
 	cmp	r0, r2			/* until source end addreee [r2]    */
 	ble	copy_loop
-#endif	/* CONFIG_SKIP_RELOCATE_UBOOT */
-
-	/* Set up the stack						    */
-stack_setup:
-	ldr	r0, _TEXT_BASE		/* upper 128 KiB: relocated uboot   */
-	sub	r0, r0, #CFG_MALLOC_LEN	/* malloc area                      */
-	sub	r0, r0, #CFG_GBL_DATA_SIZE /* bdinfo                        */
-#ifdef CONFIG_USE_IRQ
-	sub	r0, r0, #(CONFIG_STACKSIZE_IRQ+CONFIG_STACKSIZE_FIQ)
 #endif
-	sub	sp, r0, #12		/* leave 3 words for abort-stack    */
+#endif	/* CONFIG_SKIP_RELOCATE_UBOOT */
 
 clear_bss:
 	ldr	r0, _bss_start		/* find start of bss segment        */
@@ -198,6 +225,15 @@ clbss_l:str	r2, [r0]		/* clear loop...                    */
 	add	r0, r0, #4
 	cmp	r0, r1
 	ble	clbss_l
+
+SetLoadFlag:
+	/* Set a global flag, PreLoadedONRAM */
+	adr	r0, _start		/* r0 <- current position of code   */
+	ldr	r1, _TEXT_BASE		/* test if we run from flash or RAM */
+	cmp     r0, r1                  /* don't reloc during debug         */
+	ldr r2, =PreLoadedONRAM
+	mov r3, #1
+	streq r3, [r2]
 
 #if 0
 	/* try doing this stuff after the relocation */
@@ -400,14 +436,88 @@ not_used:
 	bad_save_user_regs
 	bl 	do_not_used
 
+@ thisway.diy, 2006.06.24
+.globl Launch
+    .align	4
+Launch:    
+    mov r7, r0
+    @ diable interrupt
+	@ disable watch dog timer
+	mov	r1, #0x53000000
+	mov	r2, #0x0
+	str	r2, [r1]
+
+    ldr r1,=INTMSK
+    ldr r2,=0xffffffff  @ all interrupt disable
+    str r2,[r1]
+
+    ldr r1,=INTSUBMSK
+    ldr r2,=0x7ff       @ all sub interrupt disable
+    str r2,[r1]
+
+    ldr     r1, = INTMOD
+    mov r2, #0x0        @ set all interrupt as IRQ (not FIQ)
+    str     r2, [r1]
+
+    @ 
+	mov	ip, #0
+	mcr	p15, 0, ip, c13, c0, 0      @	/* zero PID */
+	mcr	p15, 0, ip, c7, c7, 0       @	/* invalidate I,D caches */
+	mcr	p15, 0, ip, c7, c10, 4      @	/* drain write buffer */
+	mcr	p15, 0, ip, c8, c7, 0       @	/* invalidate I,D TLBs */
+	mrc	p15, 0, ip, c1, c0, 0       @	/* get control register */
+	bic	ip, ip, #0x0001             @	/* disable MMU */
+	mcr	p15, 0, ip, c1, c0, 0       @	/* write control register */
+
+    @ MMU_EnableICache
+    @mrc p15,0,r1,c1,c0,0
+    @orr r1,r1,#(1<<12)
+    @mcr p15,0,r1,c1,c0,0
+
+    @ clear SDRAM: the end of free mem(has wince on it now) to the end of SDRAM
+    ldr     r3, FREE_RAM_END
+    ldr     r4, =PHYS_SDRAM_1+PHYS_SDRAM_1_SIZE    @ must clear all the memory unused to zero
+    mov     r5, #0
+
+    ldr     r1, _armboot_start
+    ldr     r2, =On_Steppingstone
+    sub     r2, r2, r1
+    mov     pc, r2
+On_Steppingstone:
+2:  stmia   r3!, {r5}
+    cmp     r3, r4
+    bne     2b
+
+    @ set sp = 0 on sys mode
+    mov sp, #0
+
+    @ add by thisway.diy 2006.06.26, switch to SVC mode
+	msr	cpsr_c,	#0xdf	@ set the I-bit = 1, diable the IRQ interrupt
+	msr	cpsr_c,	#0xd3	@ set the I-bit = 1, diable the IRQ interrupt
+    ldr sp, =0x31ff5800	
+    
+    nop
+	nop
+    nop
+	nop
+
+	mov     pc, r7  @ Jump to PhysicalAddress
+	nop
+    mov pc, lr
+
 #ifdef CONFIG_USE_IRQ
 
 	.align	5
 irq:
-	get_irq_stack
-	irq_save_user_regs
-	bl 	do_irq
-	irq_restore_user_regs
+/* add by www.100ask.net to use IRQ for USB and DMA */
+	sub	lr, lr, #4			        @ the return address
+	ldr	sp, IRQ_STACK_START	        @ the stack for irq
+	stmdb	sp!, 	{ r0-r12,lr }	@ save registers
+	
+	ldr	lr,	=int_return		        @ set the return addr
+	ldr	pc, =IRQ_Handle		        @ call the isr
+int_return:
+	ldmia	sp!, 	{ r0-r12,pc }^	@ return from interrupt
 
 	.align	5
 fiq:

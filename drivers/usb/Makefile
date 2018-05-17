@@ -1,5 +1,5 @@
 #
-# (C) Copyright 2000-2006
+# (C) Copyright 2006
 # Wolfgang Denk, DENX Software Engineering, wd@denx.de.
 #
 # See file CREDITS for list of people who contributed to this
@@ -12,7 +12,7 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
@@ -23,17 +23,16 @@
 
 include $(TOPDIR)/config.mk
 
-LIB	= $(obj)lib$(SOC).a
+LIB 	:= $(obj)libusb.a
 
-COBJS	= i2c.o interrupts.o serial.o speed.o \
-	  usb_ohci.o nand_flash.o
+COBJS 	:= usbin.o  usblib.o  usbmain.o  usbout.o  usbsetup.o usbinit.o
 
-SRCS	:= $(SOBJS:.o=.S) $(COBJS:.o=.c)
-OBJS	:= $(addprefix $(obj),$(SOBJS) $(COBJS))
+SRCS 	:= $(COBJS:.o=.c)
+OBJS 	:= $(addprefix $(obj),$(COBJS))
 
-all:	$(obj).depend $(LIB)
+all:	$(LIB)
 
-$(LIB):	$(OBJS)
+$(LIB):	$(obj).depend $(OBJS)
 	$(AR) $(ARFLAGS) $@ $(OBJS)
 
 #########################################################################

@@ -23,18 +23,23 @@
 
 include $(TOPDIR)/config.mk
 
-LIB	= $(obj)lib$(SOC).a
+LIB	= $(obj)lib$(BOARD).a
 
-COBJS	= i2c.o interrupts.o serial.o speed.o \
-	  usb_ohci.o nand_flash.o
+COBJS	:= 100ask24x0.o boot_init.o
+SOBJS	:= lowlevel_init.o
 
 SRCS	:= $(SOBJS:.o=.S) $(COBJS:.o=.c)
-OBJS	:= $(addprefix $(obj),$(SOBJS) $(COBJS))
+OBJS	:= $(addprefix $(obj),$(COBJS))
+SOBJS	:= $(addprefix $(obj),$(SOBJS))
 
-all:	$(obj).depend $(LIB)
+$(LIB):	$(obj).depend $(OBJS) $(SOBJS)
+	$(AR) $(ARFLAGS) $@ $(OBJS) $(SOBJS)
 
-$(LIB):	$(OBJS)
-	$(AR) $(ARFLAGS) $@ $(OBJS)
+clean:
+	rm -f $(SOBJS) $(OBJS)
+
+distclean:	clean
+	rm -f $(LIB) core *.bak .depend
 
 #########################################################################
 
