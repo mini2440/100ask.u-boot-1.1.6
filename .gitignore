@@ -3,6 +3,7 @@
 # subdirectories here. Add them in the ".gitignore" file
 # in that subdirectory instead.
 
+# mz8023yt@163.com 20180520 begin >>> [1/2] ignore the auto generate files
 #
 # maiot added rules
 #
@@ -26,13 +27,15 @@ u-boot
 u-boot.bin
 u-boot.map
 u-boot.srec
-
+# mz8023yt@163.com 20180520 end   <<< [1/2] ignore the auto generate file
 #
 # Normal rules
 #
 .*
+# mz8023yt@163.com 20180520 begin >>> [2/2] ignore the auto generate file
 # don't ignore the .gitignore file
 !.gitignore
+# mz8023yt@163.com 20180520 end   <<< [2/2] ignore the auto generate file
 *.o
 *.a
 *.s
